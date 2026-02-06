@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
 const APP_ID = process.env.NEXT_PUBLIC_ZALO_APP_ID!;
 const REDIRECT_URI = process.env.NEXT_PUBLIC_REDIRECT_URI!;
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!;
 
 // PKCE helpers
 function generateRandomString(length: number): string {
@@ -24,12 +25,37 @@ async function generateCodeChallenge(verifier: string): Promise<string> {
     .replace(/=+$/, '');
 }
 
+function decodeJwtPayload(token: string): Record<string, unknown> {
+  const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+  return JSON.parse(atob(base64));
+}
+
 type Status = 'idle' | 'loading' | 'error';
 
 // Check if this is a callback page (popup returning from Zalo)
 function isOAuthCallback() {
   if (typeof window === 'undefined') return false;
   return new URLSearchParams(window.location.search).has('code');
+}
+
+// Extend window for Google Identity Services
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: {
+            client_id: string;
+            callback: (response: { credential: string }) => void;
+            auto_select?: boolean;
+            cancel_on_tap_outside?: boolean;
+          }) => void;
+          prompt: (notification?: (status: { isNotDisplayed: () => boolean; isSkippedMoment: () => boolean }) => void) => void;
+          disableAutoSelect: () => void;
+        };
+      };
+    };
+  }
 }
 
 export default function ZaloSSO() {
@@ -42,9 +68,30 @@ export default function ZaloSSO() {
 
   function clearZaloData() {
     localStorage.removeItem('zalo_user');
+    localStorage.removeItem('google_user');
     localStorage.removeItem('zalo_code_verifier');
     localStorage.removeItem('zalo_state');
   }
+
+  const handleGoogleCredential = useCallback((response: { credential: string }) => {
+    try {
+      const payload = decodeJwtPayload(response.credential);
+      const googleUser = {
+        provider: 'google',
+        id: payload.sub,
+        name: payload.name,
+        email: payload.email,
+        picture: payload.picture,
+        raw: payload,
+      };
+      localStorage.setItem('google_user', JSON.stringify(googleUser));
+      router.push('/profile');
+    } catch (err) {
+      console.error('Google auth error:', err);
+      setError('Failed to process Google sign-in');
+      setStatus('error');
+    }
+  }, [router]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -78,15 +125,15 @@ export default function ZaloSSO() {
       return;
     }
 
-    // Already logged in
-    if (localStorage.getItem('zalo_user')) {
+    // Already logged in (Zalo or Google)
+    if (localStorage.getItem('zalo_user') || localStorage.getItem('google_user')) {
       router.push('/profile');
       return;
     }
 
     // Fresh start — listen for login from popup, generate login URL
     function onStorage(e: StorageEvent) {
-      if (e.key === 'zalo_user' && e.newValue) {
+      if ((e.key === 'zalo_user' || e.key === 'google_user') && e.newValue) {
         router.push('/profile');
       }
     }
@@ -95,8 +142,39 @@ export default function ZaloSSO() {
     clearZaloData();
     generateLoginUrl();
 
+    // Initialize Google One Tap
+    if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_ID !== 'YOUR_GOOGLE_CLIENT_ID_HERE') {
+      loadGoogleScript();
+    }
+
     return () => window.removeEventListener('storage', onStorage);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
+
+  function loadGoogleScript() {
+    if (document.getElementById('google-gsi-script')) {
+      initializeGoogleOneTap();
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'google-gsi-script';
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => initializeGoogleOneTap();
+    document.head.appendChild(script);
+  }
+
+  function initializeGoogleOneTap() {
+    if (!window.google) return;
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: handleGoogleCredential,
+      auto_select: true,
+      cancel_on_tap_outside: false,
+    });
+    window.google.accounts.id.prompt();
+  }
 
   async function generateLoginUrl() {
     const verifier = generateRandomString(43);
@@ -211,6 +289,9 @@ export default function ZaloSSO() {
                       </svg>
                       Đăng nhập với Zalo
                     </button>
+
+                    {/* Google One Tap container — the toast renders via the Google script */}
+                    <div id="g_id_onload" />
 
                     {!showEmailForm && (
                       <p className="text-center text-sm text-gray-400">

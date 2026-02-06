@@ -4,23 +4,34 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ZaloProfile = Record<string, any>;
+type UserProfile = Record<string, any>;
 
 export default function ProfilePage() {
   const router = useRouter();
-  const [profile, setProfile] = useState<ZaloProfile | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [provider, setProvider] = useState<'zalo' | 'google' | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem('zalo_user');
-    if (!stored) {
+    const zaloStored = localStorage.getItem('zalo_user');
+    const googleStored = localStorage.getItem('google_user');
+
+    if (googleStored) {
+      setProfile(JSON.parse(googleStored));
+      setProvider('google');
+    } else if (zaloStored) {
+      setProfile(JSON.parse(zaloStored));
+      setProvider('zalo');
+    } else {
       router.push('/');
-      return;
     }
-    setProfile(JSON.parse(stored));
   }, [router]);
 
   function handleLogout() {
     localStorage.removeItem('zalo_user');
+    localStorage.removeItem('google_user');
+    if (window.google) {
+      window.google.accounts.id.disableAutoSelect();
+    }
     router.push('/');
   }
 
@@ -32,8 +43,12 @@ export default function ProfilePage() {
     );
   }
 
-  const avatarUrl = profile.picture?.data?.url;
+  const isGoogle = provider === 'google';
+  const avatarUrl = isGoogle ? profile.picture : profile.picture?.data?.url;
   const name = profile.name || 'Unknown';
+  const subtitle = isGoogle
+    ? profile.email
+    : `Zalo ID: ${profile.id}`;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-600 to-teal-800 p-4 flex items-center justify-center">
@@ -47,6 +62,7 @@ export default function ProfilePage() {
                   src={avatarUrl}
                   alt={name}
                   className="w-24 h-24 rounded-full border-4 border-white shadow-lg"
+                  referrerPolicy="no-referrer"
                 />
               ) : (
                 <div className="w-24 h-24 rounded-full bg-white/20 flex items-center justify-center border-4 border-white shadow-lg">
@@ -62,14 +78,19 @@ export default function ProfilePage() {
               </div>
             </div>
             <h1 className="text-2xl font-bold text-white">{name}</h1>
-            <p className="text-white/80 text-sm mt-1">Zalo ID: {profile.id}</p>
+            <p className="text-white/80 text-sm mt-1">{subtitle}</p>
+            <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-semibold ${
+              isGoogle ? 'bg-white/20 text-white' : 'bg-blue-400/30 text-white'
+            }`}>
+              {isGoogle ? 'Google' : 'Zalo'}
+            </span>
           </div>
 
           <div className="p-6 space-y-4">
-            {/* Full Zalo Response */}
+            {/* Full API Response */}
             <div className="bg-gray-50 rounded-xl p-4">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
-                Full Zalo API Response
+                Full {isGoogle ? 'Google' : 'Zalo'} API Response
               </p>
               <pre className="text-xs text-gray-700 overflow-auto max-h-64 whitespace-pre-wrap break-all">
                 {JSON.stringify(profile, null, 2)}
@@ -87,7 +108,7 @@ export default function ProfilePage() {
 
           <div className="px-6 pb-6">
             <p className="text-xs text-gray-400 text-center">
-              POC - Zalo SSO with PKCE Flow
+              POC - Zalo SSO + Google One Tap
             </p>
           </div>
         </div>
