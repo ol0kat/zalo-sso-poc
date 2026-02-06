@@ -37,22 +37,28 @@ export async function GET(request: NextRequest) {
       }
     );
 
-    const profile = await profileResponse.json();
+    const profileText = await profileResponse.text();
+    let profile;
+    try {
+      profile = JSON.parse(profileText);
+    } catch {
+      return NextResponse.json(
+        { error: `Zalo returned non-JSON: ${profileText.slice(0, 200)}` },
+        { status: 502 }
+      );
+    }
 
     if (profile.error) {
-      console.error('Profile fetch error:', profile);
       return NextResponse.json(
-        { error: profile.error.message || 'Failed to fetch profile' },
+        { error: `Zalo error ${profile.error}: ${profile.message || JSON.stringify(profile)}` },
         { status: 400 }
       );
     }
 
-    // Return the entire Zalo response as-is
     return NextResponse.json(profile);
   } catch (error) {
-    console.error('Profile fetch failed:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch profile' },
+      { error: `Server error: ${error instanceof Error ? error.message : String(error)}` },
       { status: 500 }
     );
   }
