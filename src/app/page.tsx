@@ -36,13 +36,16 @@ export default function ZaloSSO() {
   const zaloWindowRef = useRef<Window | null>(null);
 
   useEffect(() => {
-    // If already logged in, go straight to profile
-    if (localStorage.getItem('zalo_user')) {
+    const params = new URLSearchParams(window.location.search);
+    const hasOAuthCode = params.has('code');
+
+    // If already logged in AND not processing a new OAuth callback, go to profile
+    if (localStorage.getItem('zalo_user') && !hasOAuthCode) {
       router.push('/profile');
       return;
     }
 
-    // Listen for login from another tab
+    // Listen for login from another tab/popup
     function onStorage(e: StorageEvent) {
       if (e.key === 'zalo_user' && e.newValue) {
         router.push('/profile');
@@ -51,7 +54,6 @@ export default function ZaloSSO() {
     window.addEventListener('storage', onStorage);
 
     async function init() {
-      const params = new URLSearchParams(window.location.search);
       const code = params.get('code');
       const stateParam = params.get('state');
       const errorParam = params.get('error');
