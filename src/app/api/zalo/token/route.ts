@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Run this function in Singapore (closest to Vietnam)
+export const runtime = 'nodejs';
+export const preferredRegion = 'sin1';
+
 export async function POST(request: NextRequest) {
   try {
     const { code, codeVerifier } = await request.json();

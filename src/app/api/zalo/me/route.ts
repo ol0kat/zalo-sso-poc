@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 
+// Run this function in Singapore (closest to Vietnam)
+export const runtime = 'nodejs';
+export const preferredRegion = 'sin1';
+
 export async function GET(request: NextRequest) {
   try {
     const accessToken = request.headers.get('authorization')?.replace('Bearer ', '');
