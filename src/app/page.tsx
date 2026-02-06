@@ -26,12 +26,18 @@ async function generateCodeChallenge(verifier: string): Promise<string> {
 
 type Status = 'idle' | 'loading' | 'error';
 
+// Check if this is a callback page (popup returning from Zalo)
+function isOAuthCallback() {
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).has('code');
+}
+
 export default function ZaloSSO() {
   const router = useRouter();
-  const [status, setStatus] = useState<Status>('idle');
+  const [status, setStatus] = useState<Status>(isOAuthCallback() ? 'loading' : 'idle');
   const [error, setError] = useState<string | null>(null);
   const [loginUrl, setLoginUrl] = useState('');
-  const [isGenerating, setIsGenerating] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(!isOAuthCallback());
   const [showEmailForm, setShowEmailForm] = useState(false);
 
   function clearZaloData() {
