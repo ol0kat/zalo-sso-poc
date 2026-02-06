@@ -33,41 +33,53 @@ export default function ZaloSSO() {
   const [loginUrl, setLoginUrl] = useState('');
   const [isGenerating, setIsGenerating] = useState(true);
 
+  function clearZaloData() {
+    localStorage.removeItem('zalo_user');
+    localStorage.removeItem('zalo_code_verifier');
+    localStorage.removeItem('zalo_state');
+  }
+
   useEffect(() => {
-    // If already logged in, go straight to profile
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const stateParam = params.get('state');
+    const errorParam = params.get('error');
+    const storedVerifier = localStorage.getItem('zalo_code_verifier');
+    const storedState = localStorage.getItem('zalo_state');
+
+    // OAuth callback — process it
+    if (code && storedVerifier) {
+      if (!stateParam || stateParam !== storedState) {
+        clearZaloData();
+        setError('Invalid state parameter');
+        setStatus('error');
+        setIsGenerating(false);
+        return;
+      }
+
+      setStatus('loading');
+      handleOAuthCallback(code, storedVerifier);
+      return;
+    }
+
+    // Error from Zalo
+    if (errorParam) {
+      clearZaloData();
+      setError(errorParam);
+      setStatus('error');
+      setIsGenerating(false);
+      return;
+    }
+
+    // Already logged in
     if (localStorage.getItem('zalo_user')) {
       router.push('/profile');
       return;
     }
 
-    async function init() {
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get('code');
-      const stateParam = params.get('state');
-      const errorParam = params.get('error');
-      const storedVerifier = localStorage.getItem('zalo_code_verifier');
-      const storedState = localStorage.getItem('zalo_state');
-
-      if (code && storedVerifier) {
-        if (!stateParam || stateParam !== storedState) {
-          setError('Invalid state parameter');
-          setStatus('error');
-          setIsGenerating(false);
-          return;
-        }
-
-        setStatus('loading');
-        await handleOAuthCallback(code, storedVerifier);
-      } else if (errorParam) {
-        setError(errorParam);
-        setStatus('error');
-        setIsGenerating(false);
-      } else {
-        await generateLoginUrl();
-      }
-    }
-
-    init();
+    // Fresh start — clear any stale data and generate login URL
+    clearZaloData();
+    generateLoginUrl();
   }, [router]);
 
   async function generateLoginUrl() {
@@ -120,6 +132,7 @@ export default function ZaloSSO() {
   }
 
   function handleRetry() {
+    clearZaloData();
     setStatus('idle');
     setError(null);
     setIsGenerating(true);
