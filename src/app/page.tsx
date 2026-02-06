@@ -32,6 +32,7 @@ export default function ZaloSSO() {
   const [error, setError] = useState<string | null>(null);
   const [loginUrl, setLoginUrl] = useState('');
   const [isGenerating, setIsGenerating] = useState(true);
+  const [showEmailForm, setShowEmailForm] = useState(false);
 
   function clearZaloData() {
     localStorage.removeItem('zalo_user');
@@ -47,7 +48,7 @@ export default function ZaloSSO() {
     const storedVerifier = localStorage.getItem('zalo_code_verifier');
     const storedState = localStorage.getItem('zalo_state');
 
-    // OAuth callback — process it
+    // OAuth callback (in the popup) — process it
     if (code && storedVerifier) {
       if (!stateParam || stateParam !== storedState) {
         clearZaloData();
@@ -77,9 +78,18 @@ export default function ZaloSSO() {
       return;
     }
 
-    // Fresh start — clear any stale data and generate login URL
+    // Fresh start — listen for login from popup, generate login URL
+    function onStorage(e: StorageEvent) {
+      if (e.key === 'zalo_user' && e.newValue) {
+        router.push('/profile');
+      }
+    }
+    window.addEventListener('storage', onStorage);
+
     clearZaloData();
     generateLoginUrl();
+
+    return () => window.removeEventListener('storage', onStorage);
   }, [router]);
 
   async function generateLoginUrl() {
@@ -93,6 +103,24 @@ export default function ZaloSSO() {
     const url = `https://oauth.zaloapp.com/v4/permission?app_id=${APP_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&code_challenge=${challenge}&state=${state}`;
     setLoginUrl(url);
     setIsGenerating(false);
+  }
+
+  function openZaloLogin() {
+    const w = 500;
+    const h = 600;
+    const left = window.screenX + (window.outerWidth - w) / 2;
+    const top = window.screenY + (window.outerHeight - h) / 2;
+    const popup = window.open(loginUrl, 'zalo_login', `width=${w},height=${h},left=${left},top=${top}`);
+
+    // Detect when popup is closed without completing auth
+    const checker = setInterval(() => {
+      if (popup && popup.closed) {
+        clearInterval(checker);
+        if (!localStorage.getItem('zalo_user')) {
+          setShowEmailForm(true);
+        }
+      }
+    }, 500);
   }
 
   async function handleOAuthCallback(code: string, codeVerifier: string) {
@@ -119,11 +147,11 @@ export default function ZaloSSO() {
         throw new Error(profile.error || 'Failed to fetch profile');
       }
 
+      // Store profile, cleanup, close popup — main window picks it up via storage event
       localStorage.setItem('zalo_user', JSON.stringify(profile));
       localStorage.removeItem('zalo_code_verifier');
       localStorage.removeItem('zalo_state');
-      window.history.replaceState({}, '', '/');
-      router.push('/profile');
+      window.close();
     } catch (err) {
       console.error('Zalo auth error:', err);
       setError(err instanceof Error ? err.message : 'Failed to authenticate');
@@ -135,6 +163,7 @@ export default function ZaloSSO() {
     clearZaloData();
     setStatus('idle');
     setError(null);
+    setShowEmailForm(false);
     setIsGenerating(true);
     generateLoginUrl();
   }
@@ -163,9 +192,10 @@ export default function ZaloSSO() {
                   </div>
                 ) : (
                   <>
-                    <a
-                      href={loginUrl}
-                      className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 shadow-lg no-underline transition-all block text-center"
+                    {/* Zalo SSO Button */}
+                    <button
+                      onClick={openZaloLogin}
+                      className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 shadow-lg transition-all cursor-pointer"
                     >
                       <svg className="w-6 h-6" viewBox="0 0 48 48" fill="currentColor">
                         <circle cx="24" cy="24" r="20" fill="white" fillOpacity="0.2" />
@@ -174,10 +204,51 @@ export default function ZaloSSO() {
                         </text>
                       </svg>
                       Đăng nhập với Zalo
-                    </a>
-                    <p className="text-center text-sm text-gray-400">
-                      Đăng nhập an toàn qua Zalo OAuth
-                    </p>
+                    </button>
+
+                    {!showEmailForm && (
+                      <p className="text-center text-sm text-gray-400">
+                        Đăng nhập an toàn qua Zalo OAuth
+                      </p>
+                    )}
+
+                    {/* Email form — revealed after Zalo popup is closed */}
+                    {showEmailForm && (
+                      <>
+                        <div className="flex items-center gap-3 my-2">
+                          <div className="flex-1 h-px bg-gray-200"></div>
+                          <span className="text-xs text-gray-400">hoặc</span>
+                          <div className="flex-1 h-px bg-gray-200"></div>
+                        </div>
+
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            alert('Email/password auth is not implemented in this POC.');
+                          }}
+                          className="space-y-3"
+                        >
+                          <input
+                            type="email"
+                            placeholder="Email"
+                            required
+                            className="w-full border border-gray-200 rounded-xl py-3 px-4 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+                          />
+                          <input
+                            type="password"
+                            placeholder="Mật khẩu"
+                            required
+                            className="w-full border border-gray-200 rounded-xl py-3 px-4 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+                          />
+                          <button
+                            type="submit"
+                            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-6 rounded-xl transition-all"
+                          >
+                            Đăng nhập với Email
+                          </button>
+                        </form>
+                      </>
+                    )}
                   </>
                 )}
               </div>
